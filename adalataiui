@@ -1,0 +1,464 @@
+import React, { useState, useCallback } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { AlertCircle, Search, File, FilePlus, CheckCircle, XCircle, BookOpen, FileText, Zap, BrainCircuit, Gavel, Landmark, Scale, Check, ChevronRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { cn } from '@/lib/utils';
+
+// ===============================
+//  Types & Interfaces
+// ===============================
+
+interface CaseData {
+    type: string;
+    id: string;
+    attributes: {
+        commencement_date: string;
+        organization: string;
+        outcome: string;
+        title: string;
+    };
+    links: { self: string };
+    relationships: {
+        decisions?: { data: { type: string; id: string }[]; links: { related: string } };
+        parties: { data: { type: string; id: string }[]; links: { related: string } };
+    };
+}
+
+interface PredictedOutcome {
+    outcome: string;
+    confidence: number;
+}
+
+// ===============================
+//  Sample Data (for demonstration)
+// ===============================
+
+const sampleData: { data: CaseData[] } = {
+    'data': [
+        {
+            'type': 'cases',
+            'id': '46690',
+            'attributes': {
+                'commencement_date': '2025-03-31T00:00:00Z',
+                'organization': 'ICSID',
+                'outcome': 'Pending',
+                'title': 'United Operations v. Comoros',
+            },
+            'links': {'self': 'http://stanford.service.gra.prod.consul/cases/46690'},
+            'relationships': {
+                'decisions': {'data': [{'type': 'decisions', 'id': '79078'}], 'links': {'related': 'http://stanford.service.gra.prod.consul/cases/46690/decisions'}},
+                'parties': {'data': [{'type': 'parties', 'id': '3535'}, {'type': 'parties', 'id': '64825'}], 'links': {'related': 'http://stanford.service.gra.prod.consul/cases/46690/parties'}},
+            },
+        },
+        {
+            'type': 'cases',
+            'id': '46609',
+            'attributes': {
+                'commencement_date': '1913-07-31T00:00:00Z',
+                'organization': 'PCA',
+                'outcome': 'Concluded',
+                'title': 'Expropriated Religious Properties',
+            },
+            'links': {'self': 'http://stanford.service.gra.prod.consul/cases/46609'},
+            'relationships': {
+                'decisions': {'data': [{'type': 'decisions', 'id': '78948'}], 'links': {'related': 'http://stanford.service.gra.prod.consul/cases/46609/decisions'}},
+                'parties': {'data': [{'type': 'parties', 'id': '7302'}, {'type': 'parties', 'id': '7319'}, {'type': 'parties', 'id': '7790'}], 'links': {'related': 'http://stanford.service.gra.prod.consul/cases/46609/parties'}},
+            },
+        },
+        {
+            'type': 'cases',
+            'id': '46542',
+            'attributes': {
+                'commencement_date': '2025-03-20T00:00:00Z',
+                'organization': 'ICSID',
+                'outcome': 'Pending',
+                'title': 'Bellwether and Tecnipetrol v. Ecuador and Petroecuador',
+            },
+            'links': {'self': 'http://stanford.service.gra.prod.consul/cases/46542'},
+            'relationships': {
+                'decisions': {'data': [{'type': 'decisions', 'id': '78809'}], 'links': {'related': 'http://stanford.service.gra.prod.consul/cases/46542/decisions'}},
+                'parties': {'data': [{'type': 'parties', 'id': '7569'}, {'type': 'parties', 'id': '13856'}, {'type': 'parties', 'id': '64647'}, {'type': 'parties', 'id': '64648'}], 'links': {'related': 'http://stanford.service.gra.prod.consul/cases/46542/parties'}},
+            },
+        },
+    ],
+    'links': {
+        'self': 'http://stanford.service.gra.prod.consul/cases?page=1&count=10',
+        'first': 'http://stanford.service.gra.prod.consul/cases?page=1&count=10',
+        'next': 'http://stanford.service.gra.prod.consul/cases?page=2&count=10',
+        'last': 'http://stanford.service.gra.prod.consul/cases?page=154&count=10',
+    },
+    'meta': {'totalPages': 154, 'totalRecords': 1539, 'currentPage': 1, 'perPage': 10},
+};
+
+// ===============================
+//  Helper Functions
+// ===============================
+
+const getRiskLevel = (score: number) => {
+    if (score >= 8) return { label: 'High Risk', color: 'bg-red-500 text-white' };
+    if (score >= 5) return { label: 'Moderate Risk', color: 'bg-orange-500 text-white' };
+    return { label: 'Low Risk', color: 'bg-green-500 text-white' };
+};
+
+// ===============================
+//  Animation Variants
+// ===============================
+const cardVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+    exit: { opacity: 0, y: -20, transition: { duration: 0.2 } },
+};
+
+// ===============================
+//  AI Function (Conceptual)
+// ===============================
+//  These functions simulate the AI processing.  Replace with actual calls to your backend
+//  or AI services (LlamaIndex, Vectara, Ollama, etc.).
+
+const mockAI = {
+    analyzeRuling: async (rulingText: string): Promise<{
+        precedents: CaseData[],
+        predictedOutcome: PredictedOutcome,
+        reasoning: string,
+        sampleAppealOpinion: string
+    }> => {
+        // Simulate a delay
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
+        // Mock Precedent Retrieval (Simplified)
+        const relevantPrecedents: CaseData[] = sampleData.data.slice(0, 3);  // First 3 cases as example
+
+        // Mock Outcome Prediction (Simplified)
+        const predictedOutcome: PredictedOutcome = {
+            outcome: Math.random() > 0.5 ? 'Appeal Likely to Succeed' : 'Appeal Unlikely to Succeed',
+            confidence: Math.random() * 0.8 + 0.2, // Between 0.2 and 1
+        };
+
+        // Mock Reasoning (Simplified)
+        const reasoning = `
+            Based on our analysis, the current case shares similarities with the following precedents:
+            -   ${relevantPrecedents[0].attributes.title}
+            -   ${relevantPrecedents[1].attributes.title}
+            -   ${relevantPrecedents[2].attributes.title}
+            
+            In ${relevantPrecedents[0].attributes.title}, the court ruled in favor of the ${Math.random() > 0.5 ? 'taxpayer' : 'government'} due to... (simplified).
+            The current case has similar facts regarding... (simplified).
+        `;
+
+        const sampleAppealOpinion = `
+            **Sample Appellate Opinion**
+            
+            The appeal in this matter is hereby ${Math.random() > 0.5 ? 'ALLOWED' : 'DISMISSED'}.
+            
+            The court finds that the ruling of the Commissioner of Tax was ${Math.random() > 0.5 ? 'upheld' : 'reversed'}.
+            
+            The key issue in this case is... (simplified).  We find that... (simplified).
+            
+            Relevant precedents, including ${relevantPrecedents[0].attributes.title}, support this decision.
+        `;
+
+        return {
+            precedents: relevantPrecedents,
+            predictedOutcome,
+            reasoning,
+            sampleAppealOpinion
+        };
+    },
+};
+
+// ===============================
+//  Main Component
+// ===============================
+
+const TaxLitigationCopilot = () => {
+    const [rulingText, setRulingText] = useState('');
+    const [analysis, setAnalysis] = useState<{
+        precedents: CaseData[],
+        predictedOutcome: PredictedOutcome,
+        reasoning: string,
+        sampleAppealOpinion: string
+    } | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const handleAnalyze = useCallback(async () => {
+        if (!rulingText.trim()) {
+            setError('Please upload a Commissioner\'s ruling.');
+            return;
+        }
+
+        setLoading(true);
+        setError(null);
+        setAnalysis(null);
+
+        try {
+            // In a real application, you'd send the rulingText to your backend API
+            //  for processing with LlamaIndex, Vectara, Ollama, etc.
+            const aiResponse = await mockAI.analyzeRuling(rulingText);
+            setAnalysis(aiResponse);
+
+        } catch (err: any) {
+            setError(err.message || 'An error occurred during analysis.');
+        } finally {
+            setLoading(false);
+        }
+    }, [rulingText]);
+
+    const shouldAppeal = () => {
+        if (!analysis) return 'neutral';
+        return analysis.predictedOutcome.outcome.includes('likely to succeed') ? 'yes' : 'no';
+    };
+
+    return (
+        <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-black p-4 sm:p-8">
+            <div className="max-w-4xl mx-auto space-y-8">
+                <div className="text-center space-y-4">
+                    <motion.h1
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5 }}
+                        className="text-4xl sm:text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 flex items-center justify-center gap-3"
+                    >
+                        <Gavel className="w-8 h-8 sm:w-12 sm:h-12" />
+                        Tax Litigation Co-Pilot
+                    </motion.h1>
+                    <motion.p
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5, delay: 0.2 }}
+                        className="text-gray-400 text-lg sm:text-xl"
+                    >
+                        AI-Powered Decision Support for Tax Officers
+                    </motion.p>
+                </div>
+
+                {/* Input Section */}
+                <Card className="bg-white/5 backdrop-blur-md border border-white/10 shadow-lg">
+                    <CardHeader>
+                        <CardTitle className="text-2xl text-white flex items-center gap-2">
+                            <FilePlus className="w-6 h-6" />
+                            Upload Ruling
+                        </CardTitle>
+                        <CardDescription className="text-gray-400">
+                            Upload the Commissioner's ruling to analyze.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <Input
+                            type="file"
+                            onChange={(e) => {
+                                if (e.target.files && e.target.files[0]) {
+                                    // In a real app, you'd read the file content here
+                                    //  and send it to your backend.  For this example,
+                                    //  we'll just store the filename.
+                                    setRulingText(e.target.files[0].name);
+                                } else {
+                                    setRulingText('');
+                                }
+                            }}
+                            className="bg-black/20 text-white border-purple-500/30 placeholder:text-gray-500"
+                        />
+                        <Button
+                            onClick={handleAnalyze}
+                            disabled={loading}
+                            className="w-full bg-gradient-to-r from-purple-500 to-blue-500 text-white
+                                       hover:from-purple-600 hover:to-blue-600 transition-colors duration-300
+                                       disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                        >
+                            {loading ? (
+                                <>
+                                    <Zap className="animate-spin w-5 h-5" />
+                                    Analyzing...
+                                </>
+                            ) : (
+                                <>
+                                    <Search className="w-5 h-5" />
+                                    Analyze Ruling
+                                </>
+                            )}
+                        </Button>
+                    </CardContent>
+                </Card>
+
+                {/* Error Message */}
+                <AnimatePresence>
+                    {error && (
+                        <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 10 }}
+                        >
+                            <Alert variant="destructive" className="bg-red-500/10 text-red-400 border-red-500/20">
+                                <AlertCircle className="h-4 w-4" />
+                                <AlertTitle>Error</AlertTitle>
+                                <AlertDescription>{error}</AlertDescription>
+                            </Alert>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                {/* Results Section */}
+                <AnimatePresence>
+                    {analysis && (
+                        <motion.div
+                            variants={cardVariants}
+                            initial="hidden"
+                            animate="visible"
+                            exit="exit"
+                            className="space-y-6"
+                        >
+                            <Card className="bg-white/5 backdrop-blur-md border border-white/10 shadow-lg">
+                                <CardHeader>
+                                    <CardTitle className="text-2xl text-white flex items-center gap-2">
+                                        <BrainCircuit className="w-6 h-6 text-blue-400" />
+                                        AI Analysis
+                                    </CardTitle>
+                                    <CardDescription className="text-gray-400">
+                                        Analysis of the Commissioner&apos;s ruling.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-6">
+                                    <div className="space-y-4">
+                                        <h3 className="text-lg font-semibold text-white flex items-center gap-1.5">
+                                            <Scale className="w-4 h-4" />
+                                            Predicted Outcome
+                                        </h3>
+                                        <p className={cn(
+                                            "text-gray-200 font-medium",
+                                            analysis.predictedOutcome.outcome.includes('likely to succeed') ? "text-green-400" : "text-red-400"
+                                        )}>
+                                            {analysis.predictedOutcome.outcome} (Confidence: {(analysis.predictedOutcome.confidence * 100).toFixed(0)}%)
+                                        </p>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        <h3 className="text-lg font-semibold text-white flex items-center gap-1.5">
+                                            <FileText className="w-4 h-4" />
+                                            Legal Reasoning
+                                        </h3>
+                                        <p className="text-gray-200 whitespace-pre-line">{analysis.reasoning}</p>
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        <h3 className="text-lg font-semibold text-white flex items-center gap-1.5">
+                                            <BookOpen className="w-4 h-4" />
+                                            Relevant Precedents
+                                        </h3>
+                                        <ul className="list-disc list-inside space-y-2">
+                                            {analysis.precedents.map(prec => (
+                                                <li key={prec.id} className="text-blue-400 hover:text-blue-300 transition-colors">
+                                                    <a href={prec.links.self} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5">
+                                                        {prec.attributes.title} <ChevronRight className="w-4 h-4" />
+                                                    </a>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <h3 className="text-lg font-semibold text-white flex items-center gap-1.5">
+                                            <Gavel className="w-4 h-4" />
+                                            Sample Appellate Opinion
+                                        </h3>
+                                        <p className="text-gray-200 whitespace-pre-line">{analysis.sampleAppealOpinion}</p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Recommendation Card */}
+                            <Card className="bg-white/5 backdrop-blur-md border border-white/10 shadow-lg">
+                                <CardHeader>
+                                    <CardTitle className="text-2xl text-white flex items-center gap-2">
+                                        <CheckCircle className="w-6 h-6 text-green-400" />
+                                        Recommendation
+                                    </CardTitle>
+                                    <CardDescription className="text-gray-400">
+                                        Based on the analysis.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent>
+                                    <p className={cn(
+                                        "text-lg font-semibold",
+                                        shouldAppeal() === 'yes'
+                                            ? "text-green-400"
+                                            : shouldAppeal() === 'no'
+                                                ? "text-red-400"
+                                                : "text-yellow-400"
+                                    )}>
+                                        {shouldAppeal() === 'yes'
+                                            ? 'Appeal Recommended'
+                                            : shouldAppeal() === 'no'
+                                                ? 'Do Not Appeal'
+                                                : 'Neutral'}
+                                    </p>
+                                    <p className="text-gray-300 mt-2">
+                                        {shouldAppeal() === 'yes'
+                                            ? 'The AI predicts a reasonable chance of success on appeal. Consider pursuing the case.'
+                                            : shouldAppeal() === 'no'
+                                                ? 'The AI suggests that an appeal is unlikely to succeed. Consider focusing resources on higher-value cases.'
+                                                : 'The AI cannot make a strong recommendation. Further review is needed.'}
+                                    </p>
+                                </CardContent>
+                            </Card>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+                {/* Feature Highlights */}
+                <section className="space-y-6">
+                    <h2 className="text-3xl font-bold text-white text-center">Key Features</h2>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            whileInView={{ opacity: 1, scale: 1 }}
+                            transition={{ duration: 0.4 }}
+                            viewport={{ once: true }}
+                            className="bg-white/5 backdrop-blur-md p-6 rounded-lg border border-white/10 shadow-lg space-y-4 flex flex-col items-center justify-center"
+                        >
+                            <BrainCircuit className="w-8 h-8 text-blue-400 mb-4" />
+                            <h3 className="text-xl font-semibold text-white text-center">AI-Powered Analysis</h3>
+                            <p className="text-gray-300 text-center">
+                                Analyzes legal documents, identifies relevant precedents, and predicts case outcomes.
+                            </p>
+                        </motion.div>
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            whileInView={{ opacity: 1, scale: 1 }}
+                            transition={{ duration: 0.4, delay: 0.2 }}
+                            viewport={{ once: true }}
+                            className="bg-white/5 backdrop-blur-md p-6 rounded-lg border border-white/10 shadow-lg space-y-4 flex flex-col items-center justify-center"
+                        >
+                            <Landmark className="w-8 h-8 text-purple-400 mb-4" />
+                            <h3 className="text-xl font-semibold text-white text-center">Legal Reasoning</h3>
+                            <p className="text-gray-300 text-center">
+                                Generates human-readable legal reasoning to justify predictions.
+                            </p>
+                        </motion.div>
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            whileInView={{ opacity: 1, scale: 1 }}
+                            transition={{ duration: 0.4, delay: 0.4 }}
+                            viewport={{ once: true }}
+                            className="bg-white/5 backdrop-blur-md p-6 rounded-lg border border-white/10 shadow-lg space-y-4 flex flex-col items-center justify-center"
+                        >
+                            <Check className="w-8 h-8 text-green-400 mb-4" />
+                            <h3 className="text-xl font-semibold text-white text-center">Appeal Recommendation</h3>
+                            <p className="text-gray-300 text-center">
+                                Provides a clear recommendation on whether to appeal a case.
+                            </p>
+                        </motion.div>
+                    </div>
+                </section>
+
+                <footer className="text-center text-gray-500 text-sm py-4 border-t border-white/10">
+                    &copy; {new Date().getFullYear()} Tax Litigation Co-Pilot. All rights reserved.
+                    {/* Add links to resources and legal disclaimers as needed */}
+                </footer>
+            </div>
+        </div>
+    );
+};
+
+export default TaxLitigationCopilot;
+
